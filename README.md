@@ -85,15 +85,6 @@ middleware.ts               # session refresh + protected routes
 3. Trial accounts can only message **verified numbers** — verify your own phone
    in the Twilio console first.
 
-## Verification checklist
-
-- [ ] `/r/[slug]` — 4–5 stars exposes the Google CTA (no private form).
-- [ ] `/r/[slug]` — 1–3 stars hides Google and shows the private form; submit
-      inserts into `private_feedbacks` with `status = 'new'`.
-- [ ] Scan the QR on `/dashboard/qr` — it lands on `/r/[slug]`.
-- [ ] Send an SMS from `/dashboard/campaigns` — it arrives with a valid link.
-- [ ] RLS: a second account cannot read another tenant's `private_feedbacks`.
-- [ ] Stripe test checkout updates the `subscriptions` table via webhook.
 
 ## Operational caveats
 
