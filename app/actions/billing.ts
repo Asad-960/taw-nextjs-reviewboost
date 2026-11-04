@@ -4,6 +4,14 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/stripe";
 
+function getBaseUrl() {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (envUrl) {
+    return envUrl.startsWith("http") ? envUrl.replace(/\/+$/, "") : `https://${envUrl.replace(/\/+$/, "")}`;
+  }
+  return "";
+}
+
 export async function createCheckoutSession() {
   const supabase = createClient();
   const {
@@ -19,10 +27,11 @@ export async function createCheckoutSession() {
   if (!business) redirect("/dashboard/settings");
 
   const priceId = process.env.STRIPE_PRICE_ID_STARTER;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = getBaseUrl();
+  const origin = baseUrl || "http://localhost:3000";
 
   if (!priceId) {
-    redirect(`${appUrl}/billing?error=missing_price_id`);
+    redirect("/billing?error=missing_price_id");
   }
 
   // Reuse an existing Stripe customer if we already created one.
@@ -33,6 +42,8 @@ export async function createCheckoutSession() {
     .maybeSingle();
 
   let customerId: string;
+  let sessionUrl: string | null = null;
+
   try {
     if (sub?.stripe_customer_id) {
       customerId = sub.stripe_customer_id;
@@ -48,20 +59,26 @@ export async function createCheckoutSession() {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
-      success_url: `${appUrl}/billing?success=1`,
-      cancel_url: `${appUrl}/billing?canceled=1`,
+      success_url: `${origin}/billing?success=1`,
+      cancel_url: `${origin}/billing?canceled=1`,
       metadata: { business_id: business.id },
       subscription_data: { metadata: { business_id: business.id } },
     });
 
-    if (session.url) {
-      redirect(session.url);
-    } else {
-      redirect(`${appUrl}/billing?error=checkout_failed`);
-    }
+    sessionUrl = session.url;
   } catch (err: any) {
+    // Next.js redirect throws a NEXT_REDIRECT error which must not be swallowed
+    if (err?.message === "NEXT_REDIRECT" || err?.digest?.startsWith("NEXT_REDIRECT")) {
+      throw err;
+    }
     console.error("Stripe Checkout creation error:", err);
-    redirect(`${appUrl}/billing?error=stripe_unavailable`);
+    redirect("/billing?error=stripe_unavailable");
+  }
+
+  if (sessionUrl) {
+    redirect(sessionUrl);
+  } else {
+    redirect("/billing?error=checkout_failed");
   }
 }
 
@@ -89,15 +106,27 @@ export async function createBillingPortal() {
     redirect("/billing");
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = getBaseUrl();
+  const origin = baseUrl || "http://localhost:3000";
+
+  let portalUrl: string | null = null;
   try {
     const portal = await stripe.billingPortal.sessions.create({
       customer: sub.stripe_customer_id,
-      return_url: `${appUrl}/billing`,
+      return_url: `${origin}/billing`,
     });
-    redirect(portal.url);
+    portalUrl = portal.url;
   } catch (err: any) {
+    if (err?.message === "NEXT_REDIRECT" || err?.digest?.startsWith("NEXT_REDIRECT")) {
+      throw err;
+    }
     console.error("Stripe Billing Portal creation error:", err);
-    redirect(`${appUrl}/billing?error=portal_failed`);
+    redirect("/billing?error=portal_failed");
+  }
+
+  if (portalUrl) {
+    redirect(portalUrl);
+  } else {
+    redirect("/billing?error=portal_failed");
   }
 }
